@@ -1,1 +1,1 @@
-recipe book app
+investment signal app
