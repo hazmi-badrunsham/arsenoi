@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:url_launcher/url_launcher.dart';
 
 void main() {
   runApp(MyApp());
@@ -48,8 +49,8 @@ class _USStockPageState extends State<USStockPage> {
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: onTabTapped,
-        selectedItemColor: Colors.black, // Selected item color (black)
-        unselectedItemColor: Colors.black, // Unselected item color (black)
+        selectedItemColor: Colors.black,
+        unselectedItemColor: Colors.black,
         items: [
           BottomNavigationBarItem(
             icon: Icon(Icons.show_chart),
@@ -198,7 +199,6 @@ class _USStockPageContentState extends State<USStockPageContent> {
   }
 }
 
-// New Trending Stock Page
 class TrendingStockPage extends StatefulWidget {
   @override
   _TrendingStockPageState createState() => _TrendingStockPageState();
@@ -208,46 +208,50 @@ class _TrendingStockPageState extends State<TrendingStockPage> {
   List<Map<String, dynamic>> _topGainers = [];
   bool _isLoading = true;
 
+  // Replace with your Alpha Vantage API key
+  final String apiKey = 'ZUAUI6SONHCTRLKQ';
+  final String symbol = 'IBM';  // Set this to any stock symbol you want to fetch
+
   Future<void> fetchTopGainers() async {
-    final apiKey = 'cttppk1r01qqhvb16ptgcttppk1r01qqhvb16pu0'; // Replace with your Finnhub API key
-    final symbolUrl =
-        'https://finnhub.io/api/v1/stock/symbol?exchange=US&token=$apiKey';
+    final String url =
+        'https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=$symbol&apikey=$apiKey';
 
     try {
-      final symbolResponse = await http.get(Uri.parse(symbolUrl));
-      if (symbolResponse.statusCode == 200) {
-        final List<dynamic> symbols = json.decode(symbolResponse.body);
-        final List<Map<String, dynamic>> stockData = [];
+      final response = await http.get(Uri.parse(url));
 
-        // Fetch stock quotes for the first 20 symbols (to avoid API limits)
-        for (int i = 0; i < 20; i++) {
-          final symbol = symbols[i]['symbol'];
-          final quoteUrl =
-              'https://finnhub.io/api/v1/quote?symbol=$symbol&token=$apiKey';
-          final quoteResponse = await http.get(Uri.parse(quoteUrl));
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = json.decode(response.body);
 
-          if (quoteResponse.statusCode == 200) {
-            final quote = json.decode(quoteResponse.body);
+        if (data.containsKey("Time Series (Daily)")) {
+          final dailyData = data["Time Series (Daily)"] as Map<String, dynamic>;
+          final List<Map<String, dynamic>> stockData = [];
+
+          dailyData.forEach((date, values) {
+            final open = double.tryParse(values['1. open']) ?? 0.0;
+            final close = double.tryParse(values['4. close']) ?? 0.0;
+            final change = ((close - open) / open) * 100;
+
             stockData.add({
-              'symbol': symbol,
-              'currentPrice': quote['c'],
-              'previousClose': quote['pc'],
-              'percentChange':
-                  ((quote['c'] - quote['pc']) / quote['pc']) * 100,
+              'date': date,
+              'open': open,
+              'close': close,
+              'percentChange': change,
+              'name': symbol, // Dynamically show stock symbol
             });
-          }
+          });
+
+          stockData.sort((a, b) =>
+              b['percentChange'].compareTo(a['percentChange']));
+
+          setState(() {
+            _topGainers = stockData.take(10).toList();
+            _isLoading = false;
+          });
+        } else {
+          throw Exception('Invalid data format returned by Alpha Vantage.');
         }
-
-        // Sort stocks by percentage change in descending order
-        stockData.sort((a, b) =>
-            b['percentChange'].compareTo(a['percentChange']));
-
-        setState(() {
-          _topGainers = stockData.take(10).toList(); // Top 10 gainers
-          _isLoading = false;
-        });
       } else {
-        throw Exception('Failed to fetch stock symbols.');
+        throw Exception('Failed to fetch data. Status code: ${response.statusCode}');
       }
     } catch (e) {
       setState(() {
@@ -276,11 +280,11 @@ class _TrendingStockPageState extends State<TrendingStockPage> {
               itemBuilder: (context, index) {
                 final stock = _topGainers[index];
                 return ListTile(
-                  title: Text(stock['symbol']),
+                  title: Text('${stock['name']} (${stock['date']})'),
                   subtitle: Text(
                       'Change: ${stock['percentChange'].toStringAsFixed(2)}%'),
                   trailing: Text(
-                    '\$${stock['currentPrice'].toStringAsFixed(2)}',
+                    'Close: \$${stock['close'].toStringAsFixed(2)}',
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
                 );
@@ -290,9 +294,135 @@ class _TrendingStockPageState extends State<TrendingStockPage> {
   }
 }
 
+class TrendingNewsPage extends StatefulWidget {
+  @override
+  _TrendingNewsPageState createState() => _TrendingNewsPageState();
+}
+
+class _TrendingNewsPageState extends State<TrendingNewsPage> {
+  bool _isLoading = true;
+  List<Map<String, dynamic>> _articles = [];
+
+  // Replace with your NewsAPI key
+  final String apiKey = '507446fca10d45b4ad2f94bbf5f8cb97';
+
+  // Fetch stock-related news
+  Future<void> fetchTrendingNews() async {
+    final url =
+        'https://newsapi.org/v2/everything?q=stock&language=en&apiKey=$apiKey';
+
+    try {
+      final response = await http.get(Uri.parse(url));
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = json.decode(response.body);
+
+        // Check if status is ok and if articles are present
+        if (data['status'] == 'ok' && data['articles'] != null) {
+          final List articles = data['articles'];
+          setState(() {
+            _articles = articles.map((article) {
+              return {
+                'title': article['title'],
+                'description': article['description'],
+                'url': article['url'],
+                'publishedAt': article['publishedAt'],
+              };
+            }).toList();
+            _isLoading = false;
+          });
+        } else {
+          // If no articles are returned
+          setState(() {
+            _isLoading = false;
+            _articles = [];
+          });
+          print('No articles found or invalid response structure.');
+        }
+      } else {
+        throw Exception('Failed to fetch data. Status code: ${response.statusCode}');
+      }
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _articles = [];
+      });
+      print('Error: $e');
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    fetchTrendingNews(); // Fetch news when the page is loaded
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Trending News - US Stocks'),
+      ),
+      body: _isLoading
+          ? Center(child: CircularProgressIndicator())
+          : _articles.isEmpty
+              ? Center(child: Text('No trending news found.'))
+              : ListView.builder(
+                  itemCount: _articles.length,
+                  itemBuilder: (context, index) {
+                    final article = _articles[index];
+                    return ListTile(
+                      title: Text(article['title']),
+                      subtitle: Text(article['description'] ?? 'No description available'),
+                      trailing: Icon(Icons.arrow_forward),
+                      onTap: () {
+                        // Open the full article in a web browser
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => NewsDetailPage(url: article['url']),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+    );
+  }
+}
+
+class NewsDetailPage extends StatelessWidget {
+  final String url;
+
+  NewsDetailPage({required this.url});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('News Detail'),
+      ),
+      body: Center(
+        child: ElevatedButton(
+          onPressed: () async {
+            // Open the URL in a web browser using `url_launcher`
+            if (await canLaunch(url)) {
+              await launch(url);
+            } else {
+              throw 'Could not launch $url';
+            }
+          },
+          child: Text('Open Article in Browser'),
+        ),
+      ),
+    );
+  }
+}
 
 
-// Placeholder pages for other navigation items
+
+
+
 class PlaceholderPage extends StatelessWidget {
   final String title;
 
