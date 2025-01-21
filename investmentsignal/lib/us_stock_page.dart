@@ -31,7 +31,7 @@ class _USStockPageState extends State<USStockPage> {
   final List<Widget> _pages = [
     USStockPageContent(),
     TrendingStockPage(),
-    PlaceholderPage(title: "Community Suggestions"),
+    CommunitySuggestionsPage(),
   ];
 
   void onTabTapped(int index) {
@@ -207,19 +207,18 @@ class _TrendingStockPageState extends State<TrendingStockPage> {
 
   // Predefined list of stock symbols
   final List<String> predefinedSymbols = [
-    'AAPL', // Apple
-    'MSFT', // Microsoft
-    'GOOGL', // Alphabet (Google)
-    'AMZN', // Amazon
-    'TSLA', // Tesla
-    'META', // Meta (Facebook)
-    'NVDA', // NVIDIA
-    'NFLX', // Netflix
-    'AMD',  // AMD
-    'INTC', // Intel
+    'AAPL',
+    'MSFT',
+    'GOOGL',
+    'AMZN',
+    'TSLA',
+    'META',
+    'NVDA',
+    'NFLX',
+    'AMD',
+    'INTC',
   ];
 
-  // Fetch stock data from Finnhub
   Future<void> fetchTopGainers() async {
     try {
       List<Map<String, dynamic>> stockData = [];
@@ -232,10 +231,10 @@ class _TrendingStockPageState extends State<TrendingStockPage> {
         if (response.statusCode == 200) {
           final quote = json.decode(response.body);
 
-          final double open = quote['o'] ?? 0.0; // Open price
-          final double close = quote['c'] ?? 0.0; // Current/Close price
+          final double open = quote['o'] ?? 0.0;
+          final double close = quote['c'] ?? 0.0;
           final double change = ((close - open) / (open == 0.0 ? 1 : open)) *
-              100; // Percent change
+              100;
 
           stockData.add({
             'symbol': symbol,
@@ -246,7 +245,6 @@ class _TrendingStockPageState extends State<TrendingStockPage> {
         }
       }
 
-      // Sort by percent change in descending order
       stockData.sort((a, b) =>
           b['percentChange'].compareTo(a['percentChange']));
 
@@ -300,6 +298,9 @@ class _TrendingStockPageState extends State<TrendingStockPage> {
 
 
 
+
+
+
 class CommunitySuggestionsPage extends StatefulWidget {
   @override
   _CommunitySuggestionsPageState createState() =>
@@ -307,72 +308,118 @@ class CommunitySuggestionsPage extends StatefulWidget {
 }
 
 class _CommunitySuggestionsPageState extends State<CommunitySuggestionsPage> {
-  bool _isLoading = true;
-  Map<String, dynamic> _signalData = {};
-  final String apiKey = 'ZUAUI6SONHCTRLKQ'; // Replace with your API key
+  bool _isLoading = false;
+  Map<String, dynamic> _stockData = {};
+  final String apiKey = 'o3X9tFDaOBCnusYGQbvLR6mHTBjkG1YQ'; // Replace with your Polygon API Key
 
-  @override
-  void initState() {
-    super.initState();
-    fetchStockSignals('AAPL'); // Default stock for signals
-  }
-
-  Future<void> fetchStockSignals(String symbol) async {
+  Future<void> fetchStockData(String symbol) async {
     setState(() {
       _isLoading = true;
-      _signalData = {}; // Reset signal data
+      _stockData = {};
     });
 
-    final url =
-        'https://www.alphavantage.co/query?function=RSI&symbol=$symbol&interval=daily&time_period=14&series_type=close&apikey=$apiKey';
-
     try {
+      final url =
+          'https://api.polygon.io/v2/aggs/ticker/$symbol/range/1/day/2023-01-01/2025-01-01?apiKey=$apiKey';
       final response = await http.get(Uri.parse(url));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        if (data != null && data['Technical Analysis: RSI'] != null) {
-          final rsiData = data['Technical Analysis: RSI'];
-          final latestDate = rsiData.keys.first;
-          final latestRSI = double.parse(rsiData[latestDate]['RSI']);
-          String signal = '';
 
-          if (latestRSI < 30) {
-            signal = 'Buy Signal (Oversold)';
-          } else if (latestRSI > 70) {
-            signal = 'Sell Signal (Overbought)';
-          } else {
-            signal = 'Hold';
-          }
+        if (data != null && data['results'] != null && data['results'].isNotEmpty) {
+          final prices = data['results'].map((e) => e['c']).toList();
+          final closePrices = prices.cast<double>();
+
+          // Calculate indicators
+          final rsi = calculateRSI(closePrices);
+          final movingAverageShort = calculateMovingAverage(closePrices, 10);
+          final movingAverageLong = calculateMovingAverage(closePrices, 50);
+          final atr = calculateATR(data['results']);
+          final signal = determineSignal(rsi, movingAverageShort, movingAverageLong);
 
           setState(() {
-            _signalData = {
+            _stockData = {
               'symbol': symbol,
-              'date': latestDate,
-              'rsi': latestRSI,
+              'rsi': rsi,
+              'movingAverageShort': movingAverageShort,
+              'movingAverageLong': movingAverageLong,
+              'atr': atr,
               'signal': signal,
             };
             _isLoading = false;
           });
         } else {
           setState(() {
-            _signalData = {'error': 'No signals found for $symbol'};
+            _stockData = {'error': 'No data available for $symbol'};
             _isLoading = false;
           });
         }
       } else {
         setState(() {
-          _signalData = {
-            'error': 'Failed to fetch signals. Status Code: ${response.statusCode}'
+          _stockData = {
+            'error': 'Failed to fetch data. Status Code: ${response.statusCode}'
           };
           _isLoading = false;
         });
       }
     } catch (e) {
       setState(() {
-        _signalData = {'error': 'Network error: $e'};
+        _stockData = {'error': 'Network error: $e'};
         _isLoading = false;
       });
+    }
+  }
+
+  double calculateRSI(List<double> prices) {
+    if (prices.length < 14) return 0.0;
+
+    double gain = 0.0, loss = 0.0;
+    for (int i = 1; i <= 14; i++) {
+      final diff = prices[i] - prices[i - 1];
+      if (diff > 0) {
+        gain += diff;
+      } else {
+        loss -= diff;
+      }
+    }
+
+    final avgGain = gain / 14;
+    final avgLoss = loss / 14;
+    if (avgLoss == 0) return 100.0;
+
+    final rs = avgGain / avgLoss;
+    return 100 - (100 / (1 + rs));
+  }
+
+  double calculateMovingAverage(List<double> prices, int period) {
+    if (prices.length < period) return 0.0;
+
+    final sublist = prices.take(period).toList();
+    return sublist.reduce((a, b) => a + b) / period;
+  }
+
+  double calculateATR(List<dynamic> data) {
+    if (data.length < 14) return 0.0;
+
+    double atr = 0.0;
+    for (int i = 1; i < data.length; i++) {
+      final highLow = data[i]['h'] - data[i]['l'];
+      final highClose = (data[i]['h'] - data[i - 1]['c']).abs();
+      final lowClose = (data[i]['l'] - data[i - 1]['c']).abs();
+
+      atr += [highLow, highClose, lowClose].reduce((a, b) => a > b ? a : b);
+    }
+
+    return atr / 14;
+  }
+
+  String determineSignal(double rsi, double shortMA, double longMA) {
+    if (rsi < 30 && shortMA > longMA) {
+      return 'Buy';
+    } else if (rsi > 70 && shortMA < longMA) {
+      return 'Sell';
+    } else {
+      return 'Hold';
     }
   }
 
@@ -380,7 +427,7 @@ class _CommunitySuggestionsPageState extends State<CommunitySuggestionsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Community Stock Signals'),
+        title: Text('Community Suggestions'),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -393,17 +440,17 @@ class _CommunitySuggestionsPageState extends State<CommunitySuggestionsPage> {
               ),
               onSubmitted: (value) {
                 if (value.isNotEmpty) {
-                  fetchStockSignals(value.toUpperCase());
+                  fetchStockData(value.toUpperCase());
                 }
               },
             ),
             SizedBox(height: 16),
             _isLoading
                 ? Center(child: CircularProgressIndicator())
-                : _signalData.containsKey('error')
+                : _stockData.containsKey('error')
                     ? Center(
                         child: Text(
-                          _signalData['error'],
+                          _stockData['error'],
                           style: TextStyle(color: Colors.red),
                         ),
                       )
@@ -412,29 +459,25 @@ class _CommunitySuggestionsPageState extends State<CommunitySuggestionsPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Stock Symbol: ${_signalData['symbol'] ?? 'N/A'}',
+                              'Stock Symbol: ${_stockData['symbol'] ?? 'N/A'}',
                               style: TextStyle(
                                   fontSize: 20, fontWeight: FontWeight.bold),
                             ),
                             SizedBox(height: 10),
+                            Text('RSI: ${_stockData['rsi']?.toStringAsFixed(2) ?? 'N/A'}'),
                             Text(
-                              'Date: ${_signalData['date'] ?? 'N/A'}',
-                              style: TextStyle(fontSize: 16),
-                            ),
+                                'Short Moving Average: ${_stockData['movingAverageShort']?.toStringAsFixed(2) ?? 'N/A'}'),
+                            Text(
+                                'Long Moving Average: ${_stockData['movingAverageLong']?.toStringAsFixed(2) ?? 'N/A'}'),
+                            Text('ATR: ${_stockData['atr']?.toStringAsFixed(2) ?? 'N/A'}'),
                             SizedBox(height: 10),
                             Text(
-                              'RSI: ${_signalData['rsi']?.toStringAsFixed(2) ?? 'N/A'}',
-                              style: TextStyle(fontSize: 16),
-                            ),
-                            SizedBox(height: 10),
-                            Text(
-                              'Signal: ${_signalData['signal'] ?? 'N/A'}',
+                              'Signal: ${_stockData['signal'] ?? 'N/A'}',
                               style: TextStyle(
                                 fontSize: 16,
-                                color: _signalData['signal'] == 'Buy Signal (Oversold)'
+                                color: _stockData['signal'] == 'Buy'
                                     ? Colors.green
-                                    : _signalData['signal'] ==
-                                            'Sell Signal (Overbought)'
+                                    : _stockData['signal'] == 'Sell'
                                         ? Colors.red
                                         : Colors.grey,
                               ),
@@ -448,6 +491,8 @@ class _CommunitySuggestionsPageState extends State<CommunitySuggestionsPage> {
     );
   }
 }
+
+
 
 class PlaceholderPage extends StatelessWidget {
   final String title;
@@ -464,3 +509,4 @@ class PlaceholderPage extends StatelessWidget {
     );
   }
 }
+
