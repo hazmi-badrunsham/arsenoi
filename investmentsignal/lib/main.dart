@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'us_stock_page.dart'; // Import US stock page
-import 'malaysia_stock_page.dart'; // Import Malaysia stock page
 
 void main() {
   runApp(MyApp());
@@ -17,7 +16,6 @@ class MyApp extends StatelessWidget {
       home: HomePage(),
       routes: {
         '/usStock': (context) => USStockPage(),
-        '/malaysiaStock': (context) => MalaysiaStockPage(),
       },
     );
   }
@@ -39,13 +37,6 @@ class HomePage extends StatelessWidget {
                 Navigator.pushNamed(context, '/usStock');
               },
               child: Text('US Stock Tracker'),
-            ),
-            SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pushNamed(context, '/malaysiaStock');
-              },
-              child: Text('Malaysia Stock Tracker'),
             ),
           ],
         ),

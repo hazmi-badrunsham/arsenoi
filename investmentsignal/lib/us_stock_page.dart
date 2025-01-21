@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:url_launcher/url_launcher.dart';
 
 void main() {
   runApp(MyApp());
@@ -32,7 +31,6 @@ class _USStockPageState extends State<USStockPage> {
   final List<Widget> _pages = [
     USStockPageContent(),
     TrendingStockPage(),
-    PlaceholderPage(title: "Latest News"),
     PlaceholderPage(title: "Community Suggestions"),
   ];
 
@@ -59,10 +57,6 @@ class _USStockPageState extends State<USStockPage> {
           BottomNavigationBarItem(
             icon: Icon(Icons.trending_up),
             label: "Trending",
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.newspaper),
-            label: "News",
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.group),
@@ -208,51 +202,58 @@ class _TrendingStockPageState extends State<TrendingStockPage> {
   List<Map<String, dynamic>> _topGainers = [];
   bool _isLoading = true;
 
-  // Replace with your Alpha Vantage API key
-  final String apiKey = 'ZUAUI6SONHCTRLKQ';
-  final String symbol = 'IBM';  // Set this to any stock symbol you want to fetch
+  // Replace with your Finnhub API key
+  final String apiKey = 'cttppk1r01qqhvb16ptgcttppk1r01qqhvb16pu0';
 
+  // Predefined list of stock symbols
+  final List<String> predefinedSymbols = [
+    'AAPL', // Apple
+    'MSFT', // Microsoft
+    'GOOGL', // Alphabet (Google)
+    'AMZN', // Amazon
+    'TSLA', // Tesla
+    'META', // Meta (Facebook)
+    'NVDA', // NVIDIA
+    'NFLX', // Netflix
+    'AMD',  // AMD
+    'INTC', // Intel
+  ];
+
+  // Fetch stock data from Finnhub
   Future<void> fetchTopGainers() async {
-    final String url =
-        'https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=$symbol&apikey=$apiKey';
-
     try {
-      final response = await http.get(Uri.parse(url));
+      List<Map<String, dynamic>> stockData = [];
 
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> data = json.decode(response.body);
+      for (String symbol in predefinedSymbols) {
+        final quoteUrl =
+            'https://finnhub.io/api/v1/quote?symbol=$symbol&token=$apiKey';
+        final response = await http.get(Uri.parse(quoteUrl));
 
-        if (data.containsKey("Time Series (Daily)")) {
-          final dailyData = data["Time Series (Daily)"] as Map<String, dynamic>;
-          final List<Map<String, dynamic>> stockData = [];
+        if (response.statusCode == 200) {
+          final quote = json.decode(response.body);
 
-          dailyData.forEach((date, values) {
-            final open = double.tryParse(values['1. open']) ?? 0.0;
-            final close = double.tryParse(values['4. close']) ?? 0.0;
-            final change = ((close - open) / open) * 100;
+          final double open = quote['o'] ?? 0.0; // Open price
+          final double close = quote['c'] ?? 0.0; // Current/Close price
+          final double change = ((close - open) / (open == 0.0 ? 1 : open)) *
+              100; // Percent change
 
-            stockData.add({
-              'date': date,
-              'open': open,
-              'close': close,
-              'percentChange': change,
-              'name': symbol, // Dynamically show stock symbol
-            });
+          stockData.add({
+            'symbol': symbol,
+            'open': open,
+            'close': close,
+            'percentChange': change,
           });
-
-          stockData.sort((a, b) =>
-              b['percentChange'].compareTo(a['percentChange']));
-
-          setState(() {
-            _topGainers = stockData.take(10).toList();
-            _isLoading = false;
-          });
-        } else {
-          throw Exception('Invalid data format returned by Alpha Vantage.');
         }
-      } else {
-        throw Exception('Failed to fetch data. Status code: ${response.statusCode}');
       }
+
+      // Sort by percent change in descending order
+      stockData.sort((a, b) =>
+          b['percentChange'].compareTo(a['percentChange']));
+
+      setState(() {
+        _topGainers = stockData;
+        _isLoading = false;
+      });
     } catch (e) {
       setState(() {
         _isLoading = false;
@@ -271,119 +272,25 @@ class _TrendingStockPageState extends State<TrendingStockPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Top Gainers'),
+        title: Text('Top Stock - US Stocks'),
       ),
       body: _isLoading
           ? Center(child: CircularProgressIndicator())
-          : ListView.builder(
-              itemCount: _topGainers.length,
-              itemBuilder: (context, index) {
-                final stock = _topGainers[index];
-                return ListTile(
-                  title: Text('${stock['name']} (${stock['date']})'),
-                  subtitle: Text(
-                      'Change: ${stock['percentChange'].toStringAsFixed(2)}%'),
-                  trailing: Text(
-                    'Close: \$${stock['close'].toStringAsFixed(2)}',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                );
-              },
-            ),
-    );
-  }
-}
-
-class TrendingNewsPage extends StatefulWidget {
-  @override
-  _TrendingNewsPageState createState() => _TrendingNewsPageState();
-}
-
-class _TrendingNewsPageState extends State<TrendingNewsPage> {
-  bool _isLoading = true;
-  List<Map<String, dynamic>> _articles = [];
-
-  // Replace with your NewsAPI key
-  final String apiKey = '507446fca10d45b4ad2f94bbf5f8cb97';
-
-  // Fetch stock-related news
-  Future<void> fetchTrendingNews() async {
-    final url =
-        'https://newsapi.org/v2/everything?q=stock&language=en&apiKey=$apiKey';
-
-    try {
-      final response = await http.get(Uri.parse(url));
-
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> data = json.decode(response.body);
-
-        // Check if status is ok and if articles are present
-        if (data['status'] == 'ok' && data['articles'] != null) {
-          final List articles = data['articles'];
-          setState(() {
-            _articles = articles.map((article) {
-              return {
-                'title': article['title'],
-                'description': article['description'],
-                'url': article['url'],
-                'publishedAt': article['publishedAt'],
-              };
-            }).toList();
-            _isLoading = false;
-          });
-        } else {
-          // If no articles are returned
-          setState(() {
-            _isLoading = false;
-            _articles = [];
-          });
-          print('No articles found or invalid response structure.');
-        }
-      } else {
-        throw Exception('Failed to fetch data. Status code: ${response.statusCode}');
-      }
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-        _articles = [];
-      });
-      print('Error: $e');
-    }
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    fetchTrendingNews(); // Fetch news when the page is loaded
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Trending News - US Stocks'),
-      ),
-      body: _isLoading
-          ? Center(child: CircularProgressIndicator())
-          : _articles.isEmpty
-              ? Center(child: Text('No trending news found.'))
+          : _topGainers.isEmpty
+              ? Center(child: Text('No top gainers found.'))
               : ListView.builder(
-                  itemCount: _articles.length,
+                  itemCount: _topGainers.length,
                   itemBuilder: (context, index) {
-                    final article = _articles[index];
+                    final stock = _topGainers[index];
                     return ListTile(
-                      title: Text(article['title']),
-                      subtitle: Text(article['description'] ?? 'No description available'),
-                      trailing: Icon(Icons.arrow_forward),
-                      onTap: () {
-                        // Open the full article in a web browser
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => NewsDetailPage(url: article['url']),
-                          ),
-                        );
-                      },
+                      title: Text(stock['symbol']),
+                      subtitle: Text(
+                        'Change: ${stock['percentChange'].toStringAsFixed(2)}%',
+                      ),
+                      trailing: Text(
+                        'Close: \$${stock['close'].toStringAsFixed(2)}',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
                     );
                   },
                 ),
@@ -391,37 +298,156 @@ class _TrendingNewsPageState extends State<TrendingNewsPage> {
   }
 }
 
-class NewsDetailPage extends StatelessWidget {
-  final String url;
 
-  NewsDetailPage({required this.url});
+
+class CommunitySuggestionsPage extends StatefulWidget {
+  @override
+  _CommunitySuggestionsPageState createState() =>
+      _CommunitySuggestionsPageState();
+}
+
+class _CommunitySuggestionsPageState extends State<CommunitySuggestionsPage> {
+  bool _isLoading = true;
+  Map<String, dynamic> _signalData = {};
+  final String apiKey = 'ZUAUI6SONHCTRLKQ'; // Replace with your API key
+
+  @override
+  void initState() {
+    super.initState();
+    fetchStockSignals('AAPL'); // Default stock for signals
+  }
+
+  Future<void> fetchStockSignals(String symbol) async {
+    setState(() {
+      _isLoading = true;
+      _signalData = {}; // Reset signal data
+    });
+
+    final url =
+        'https://www.alphavantage.co/query?function=RSI&symbol=$symbol&interval=daily&time_period=14&series_type=close&apikey=$apiKey';
+
+    try {
+      final response = await http.get(Uri.parse(url));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data != null && data['Technical Analysis: RSI'] != null) {
+          final rsiData = data['Technical Analysis: RSI'];
+          final latestDate = rsiData.keys.first;
+          final latestRSI = double.parse(rsiData[latestDate]['RSI']);
+          String signal = '';
+
+          if (latestRSI < 30) {
+            signal = 'Buy Signal (Oversold)';
+          } else if (latestRSI > 70) {
+            signal = 'Sell Signal (Overbought)';
+          } else {
+            signal = 'Hold';
+          }
+
+          setState(() {
+            _signalData = {
+              'symbol': symbol,
+              'date': latestDate,
+              'rsi': latestRSI,
+              'signal': signal,
+            };
+            _isLoading = false;
+          });
+        } else {
+          setState(() {
+            _signalData = {'error': 'No signals found for $symbol'};
+            _isLoading = false;
+          });
+        }
+      } else {
+        setState(() {
+          _signalData = {
+            'error': 'Failed to fetch signals. Status Code: ${response.statusCode}'
+          };
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _signalData = {'error': 'Network error: $e'};
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('News Detail'),
+        title: Text('Community Stock Signals'),
       ),
-      body: Center(
-        child: ElevatedButton(
-          onPressed: () async {
-            // Open the URL in a web browser using `url_launcher`
-            if (await canLaunch(url)) {
-              await launch(url);
-            } else {
-              throw 'Could not launch $url';
-            }
-          },
-          child: Text('Open Article in Browser'),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            TextField(
+              decoration: InputDecoration(
+                labelText: 'Enter Stock Symbol (e.g., AAPL, TSLA)',
+                border: OutlineInputBorder(),
+              ),
+              onSubmitted: (value) {
+                if (value.isNotEmpty) {
+                  fetchStockSignals(value.toUpperCase());
+                }
+              },
+            ),
+            SizedBox(height: 16),
+            _isLoading
+                ? Center(child: CircularProgressIndicator())
+                : _signalData.containsKey('error')
+                    ? Center(
+                        child: Text(
+                          _signalData['error'],
+                          style: TextStyle(color: Colors.red),
+                        ),
+                      )
+                    : Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Stock Symbol: ${_signalData['symbol'] ?? 'N/A'}',
+                              style: TextStyle(
+                                  fontSize: 20, fontWeight: FontWeight.bold),
+                            ),
+                            SizedBox(height: 10),
+                            Text(
+                              'Date: ${_signalData['date'] ?? 'N/A'}',
+                              style: TextStyle(fontSize: 16),
+                            ),
+                            SizedBox(height: 10),
+                            Text(
+                              'RSI: ${_signalData['rsi']?.toStringAsFixed(2) ?? 'N/A'}',
+                              style: TextStyle(fontSize: 16),
+                            ),
+                            SizedBox(height: 10),
+                            Text(
+                              'Signal: ${_signalData['signal'] ?? 'N/A'}',
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: _signalData['signal'] == 'Buy Signal (Oversold)'
+                                    ? Colors.green
+                                    : _signalData['signal'] ==
+                                            'Sell Signal (Overbought)'
+                                        ? Colors.red
+                                        : Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+          ],
         ),
       ),
     );
   }
 }
-
-
-
-
 
 class PlaceholderPage extends StatelessWidget {
   final String title;
