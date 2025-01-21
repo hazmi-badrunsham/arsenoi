@@ -44,4 +44,4 @@ A Flutter-based app to track and analyze US stock data using **Finnhub** and **P
 - **Moving Averages**: Buy/sell signals based on short and long-term moving averages.
 - **ATR**: Measures stock volatility.
 
-![App Logo](https://imgur.com/a/F2HwF7g)
+![App Logo](https://imgur.com/EaYB5rk)
