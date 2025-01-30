@@ -1,4 +1,4 @@
-Name:Hazmi bin Badrunsham (2216595), Mohamahd Akif Hakimi bin Mohd Azmi (2218467), Adam khuarizmi bin maszlan (2115347)
+Name:Hazmi bin Badrunsham (2216595), Mohamad Akif Hakimi bin Mohd Azmi (2218467), Adam khuarizmi bin maszlan (2115347)
 
 # US Stock Tracker App
 
